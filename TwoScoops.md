@@ -79,7 +79,7 @@
 - 범용관계와 GenericForeignKey 사용은 피한다
 - 모델매니저
 
-```
+```python
 from django.db import models
 from django.utils import timezone
 
@@ -130,3 +130,88 @@ class FlavorReview(models.Model):
 2. 모델에서 null=True, blank=True옵션을 이용할 때에는 애매한 부분을 주의하라
 3. django-model-utils와 django-extensions이 유용할 수 있다.
 4. 거대 모델은 로직을 쉽게 캡슐화할 수 있지만 god objects를 유발할 수 있다.
+
+### 220312
+
+#### 7장 쿼리와 데이터베이스 레이어
+
+- 단일 객체에서 get_object_or_404() 이용하기  
+  단일 객체를 가져오는 작업 등은 get()대신에 get_object_or_404를 활용.  
+  단, 뷰에서만 사용. model, form, helper function 등 view와 관련된 곳이 아닌 경우, 특정 데이터를 삭제했을 때 앱이 중단될 수 있다.  
+  get_object_or_404()를 이용할 때는 try-except블록으로 예외처리를 할 필요는 없다.
+- ObjectDoesNotExist와 DoesNotExist
+
+```python
+from django.core.exceptions  import ObjectDoesNotExist
+from flavors.models import Flavor
+from store.exceptions import OutOfStock
+
+def list_flavor_line_item(sku):
+    try:
+        return Flavor.objects.get(sku=sku, quantity__gt=0)
+
+    # Flavor모델에 대해서만 예외처리
+    except Flavor.DoesNotExist:
+        msg = 'We are out of {0}'.format(sku)
+
+    raise OutOfStock(msg)
+
+def list_any_line_item(model, sku):
+    try:
+        return model.objects.get(sku=sku, quantity__gt=0)
+
+    # 어떤 모델에서 예외가 발생하더라도 잡아준다
+    except ObjectDoesNotExist:
+        msg = 'We are out of {0}'.format(sku)
+        raise OutOfStock(msg)
+```
+
+- 여러 개의 객체가 반환되었을 때
+  쿼리가 한개를 초과하는 객체를 반환할 수 있다면 MultipleObjectsReturned 예외를 활용한다.
+
+```python
+from flavors.models import Flavor
+from store.exceptions import OutOfStock, CorruptedDatabase
+
+def list_flavor_line_item(sku):
+    try:
+        return Flavor.objects.get(sku=sku, quantity__gt=0)
+    except Flavor.DoesNotExist:
+        msg = 'We are out of {}'.format(sku)
+        raise OutOfStock(msg)
+    except Flavor.MultipleObjectsReturned:
+        msg = 'Multiple items have SKU {}. Please fix!'.format(sku)
+        raise CorruptedDatabase(msg)
+```
+
+- 복잡하고 긴 쿼리는 지연연산(lazy evaluataion)을 사용한다
+  지연연산은 데이터가 필요할 때까지는 장고가 sql을 호출하지 않는 것을 뜻한다.  
+  한 줄에 여러 메서드와 데이터베이스의 각종 기능을 엮는 대신에, 여러 줄에 걸쳐 나눠쓸 수 있다.
+
+```python
+from django.db.models import Q
+from promos.models import Promo
+
+# Don't do this!
+def fun_function(name=None):
+    """유효한 아이스크림 프로모션 찾기"""
+    # 너무 길게 작성된 쿼리 체인이 화면이나 페이지를 넘겨버리게 되므로 좋지 않다
+    Promo.objects.active().filter(Q(name__startswith=name)|Q(description__icontain # ....
+
+# Do this!
+def fun_function(name=None):
+    """유효한 아이스크림 프로모션 찾기"""
+    results = Promo.objects.active()
+    results = results.filter(
+                Q(name__startswith=name) |
+                Q(description__icontains=name)
+            )
+    results = results.exclude(status='melted') # 주석을 달 수 있다!
+    results = results.select_related('flavors')  # 줄마다 의미를 파악하기 좋다
+    return results
+```
+
+- 고급 쿼리 도구 이용하기  
+  데이터베이스는 데이터 관리와 가공에서 파이썬보다 월등히 빠르기 때문에, 데이터를 호출한 후에 또다시 파이썬을 이용해 가공하는 것이 옳은 일인가? 하는 문제에 봉착한다.  
+  그러므로 파이썬에서 뎅이터를 가공하기 전에, 장고의 고급쿼리 도구를 이용하여 데이터를 가공한다.  
+   1) 쿼리표현식
