@@ -212,6 +212,100 @@ def fun_function(name=None):
 ```
 
 - 고급 쿼리 도구 이용하기  
-  데이터베이스는 데이터 관리와 가공에서 파이썬보다 월등히 빠르기 때문에, 데이터를 호출한 후에 또다시 파이썬을 이용해 가공하는 것이 옳은 일인가? 하는 문제에 봉착한다.  
-  그러므로 파이썬에서 뎅이터를 가공하기 전에, 장고의 고급쿼리 도구를 이용하여 데이터를 가공한다.  
-   1) 쿼리표현식
+   데이터베이스는 데이터 관리와 가공에서 파이썬보다 월등히 빠르기 때문에, 데이터를 호출한 후에 또다시 파이썬을 이용해 가공하는 것이 옳은 일인가? 하는 문제에 봉착한다.  
+   그러므로 파이썬에서 뎅이터를 가공하기 전에, 장고의 고급쿼리 도구를 이용하여 데이터를 가공한다.
+
+  1.  쿼리표현식  
+      데이터베이스에서 읽기를 수행할 때 쿼리 표현식을 사용하여 해당 읽기가 실행되는 동안 값이나 계산을 수행할 수 있다.
+      ```python # 평균 한 스쿱 이상을 주문한 모든 고객의 명단을 불러오는 코드
+
+              # Don't do this!
+              from models.customers import Customer
+
+              customers = []
+              for customer in Customer.objects.iterator(): # 루프를 돌며 고객 레코드 하나하나에 접근한다.
+                  if customer.scoops_ordered > customer.store_visits:
+                      customers.append(customer)
+              ```
+              데이터베이스 안의 모든 고객 레코드에 대해 하나하나 파이썬을 이용한 루프가 돌고 있다. 느리며 메모리를 많이 소모한다.
+              코드 자체가 경합 상황(race condition. 경합 상황. 공유 자원에 대해 여러 개의 프로세스가 동시에 접근을 시도하는 상태)에 직면한다. READ가 아닌 UPDATE에서는 데이터 분실이 생길 수 있다.
+              ```python
+              from django.db.models import F
+              from models.customers import Customer
+
+              customers = Customer.objects.filter(scoops_ordered__gt=F('store_visits'))
+              # 위 코드는 디비 자체 내에서 해당 조건을 비교하는 기능을 가지고 있다.
+              # 내부적으로 장고는 아래와 같은 코드를 실행한다.
+              # SELECT * from customers_customer where scoops_ordered > store_visits
+              ```
+              2. 데이터베이스 함수들
+               UPPER(), LOWER(), CONCAT() 등 일반적인 데이터베이스 함수를 사용 가능하다.
+               이용이 쉽고 간결하며, 비즈니스 로직을 디비로 더 많이 이전할 수 있게 되었다.
+               (데이터 처리는 파이썬보다 디비가 빠르다)
+               데이터베이스 함수는 쿼리표현식이기도 하다.
+
+- 로우 SQL은 지양  
+  단, 아래 상황은 쓰는 게 좋다.  
+   1) 로우 SQL을 이용함으로써 파이썬 코드나 ORM의 코드가 월등히 간결해지고 단축될 때  
+   2) 큰 데이터 셋에 적용되는 여러 QuerySet작업을 연결할 경우
+- 트랜잭션  
+  장고는 기본적으로 ORM이 모든 쿼리를 호출할 때마다 커밋을 한다.
+  이로인해 데이터베이스 충돌이 발생할 수 있으며 이를 해결하기 위해 트랜잭션을 이용한다.  
+  트랜잭션이란 둘 또는 그 이상의 업데이트를 단일화된 작업으로 처리하는 기법이다. (하나의 수정작업이 실패하면 트랜잭션의 모든 업데이트가 실패 이전 상태로 복구된다)
+  이를 위해선 디비가 원자성(Atomic), 일관성(Consistent), 독립성(Isolated), 지속성(Durable)을 가져야 한다.  
+  이런 특성을 ACID라고도 부른다. 1) 각각의 HTTP요청을 트랜잭션으로 처리하기
+  `python # settings/base.py DATABASES = { 'default': { # ... 'ATOMIC_REQUESTS': True, }, } `
+  ATOMIC_REQUESTS 설정을 통해 모든 웹 요청을 트랜잭션으로 쉽게 처리할 수 있다.  
+   이 설정은 뷰에서의 모든 데이터베이스 쿼리가 보호되는 안정성을 얻을 수 있다. 그러나 성능 저하를 가져올 수 있다.  
+   특정 뷰에서는 설정을 제외하고싶다면 transaction.non_atomic_requests()로 데코레이팅하는 선택을 고려해야 한다.  
+   ATOMIC_REQUESTS 사용 시 또 다른 주의점으로는, 작업 처리 중 사용자에게 메일을 보냈고, 메일 발송 후에 에러가 발생하여 롤백되는 경우다.  
+   이렇게 디비가 아닌 아이템에 CRUD하는 뷰를 만들 때에는 해당 뷰를 transaction.non_atomic_requests()로 데코레이팅하는 걸 고려해 보아야 한다.  
+   - Simple Non-Atomic View
+  ```python # flavors/views.py
+
+      from django.db import transaction
+      from django.http import HttpResponse
+      from django.shortcuts import get_object_or_404
+      from django.utils import timezone
+
+      from .models import Flavor
+
+      @transaction.non_atomic_requests
+      def posting_flavor_status(request, pk, status):
+          flavor = get_object_or_404(Flavor, pk=pk)
+
+          # 여기서 오토커밋 모드가 실행될 것이다. (장고 기본 설정)
+          flavor.latest_status_change_attempt = timezone.now()
+          flavor.save()
+
+          with transaction.atomic():
+              # 이 코드는 트랜잭션 안에서 실행된다.
+              flavor.status = status
+              flavor.latest_status_change_success = timezone.now()
+              flavor.save()
+
+          return HttpResponse('Hooray')
+          # If the transaction fails, return the appropriate status
+          return HttpResponse('Sadness', status_code=400)
+
+- 명시적 트랜잭션 선언  
+  사이트 성능을 개선하는 방법 중 하나이다.  
+  트랜잭션에서 어떤 뷰와 비즈니스 로직이 하나로 엮여 있는지 명시하므로, 개발할 때 더 많은 시간을 요구한다
+
+| 목적            | ORM 메서드                                                                    | 트랜잭션 이용 |
+| --------------- | ----------------------------------------------------------------------------- | ------------- |
+| 데이터 생성     | .create(), .bulk_create(), .get_or_create()                                   | O             |
+| 데이터 가져오기 | .get(), .filter(), .count(), .iterate(), .exists(), .exclude(), .in_bulk, etc | X             |
+| 데이터 수정하기 | .update()                                                                     | O             |
+| 데이터 지우기   | .delete()                                                                     | O             |
+
+    독립적인 ORM 메소드 호출을 트랜잭션 처리하지 말자
+    장고의 ORM은 데이터의 일관성을 위해 내부적으로 트랜잭션을 이용하고 있다.
+    따라서 독립적인 ORM 메서드(.create(), .update(), .delete())는 트랜잭션 처리가 유용하지 않다.
+    대신 여러 ORM 메서드들을 뷰나 함수 또는 메서드 내에서 호출할 때 트랜잭션을 이용하기 바란다.
+
+- django.http.StreamingHttpResponse와 트랜잭션  
+  뷰가 django.http.StreamingHttpResponse를 반환한다면 일단 응답이 시작된 이상 트랜잭션 에러를 중간에 처리하기란 불가능하다.  
+  StreamingHttpResponse에서 트랜잭션 에러를 처리하려면? 다음 중 하나를 고려하자 1) ATOMIC_REQUESTS=False로 설정, 7.7.2의 기술을 고려 2) 뷰를 django.db.transaction.non_atomic_requests 데코레이터로 감싸본다.
+
+트랜잭션은 뷰에서만 적용된다. 스트림 응답이 SQL쿼리를 생성했다면? 오토커밋으로 동작한다.
