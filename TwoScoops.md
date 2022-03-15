@@ -308,4 +308,4 @@ def fun_function(name=None):
   뷰가 django.http.StreamingHttpResponse를 반환한다면 일단 응답이 시작된 이상 트랜잭션 에러를 중간에 처리하기란 불가능하다.  
   StreamingHttpResponse에서 트랜잭션 에러를 처리하려면? 다음 중 하나를 고려하자 1) ATOMIC_REQUESTS=False로 설정, 7.7.2의 기술을 고려 2) 뷰를 django.db.transaction.non_atomic_requests 데코레이터로 감싸본다.
 
-트랜잭션은 뷰에서만 적용된다. 스트림 응답이 SQL쿼리를 생성했다면? 오토커밋으로 동작한다.
+트랜잭션은 뷰에서만 적용된다. 스트림 응답이 SQL쿼리를 생성했다면? 오토커밋으로 동작한다
