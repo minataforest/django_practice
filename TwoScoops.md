@@ -217,76 +217,87 @@ def fun_function(name=None):
 
   1.  쿼리표현식  
       데이터베이스에서 읽기를 수행할 때 쿼리 표현식을 사용하여 해당 읽기가 실행되는 동안 값이나 계산을 수행할 수 있다.
-      ```python # 평균 한 스쿱 이상을 주문한 모든 고객의 명단을 불러오는 코드
 
-              # Don't do this!
-              from models.customers import Customer
+      ```python
+      # 평균 한 스쿱 이상을 주문한 모든 고객의 명단을 불러오는 코드
 
-              customers = []
-              for customer in Customer.objects.iterator(): # 루프를 돌며 고객 레코드 하나하나에 접근한다.
-                  if customer.scoops_ordered > customer.store_visits:
-                      customers.append(customer)
-              ```
-              데이터베이스 안의 모든 고객 레코드에 대해 하나하나 파이썬을 이용한 루프가 돌고 있다. 느리며 메모리를 많이 소모한다.
-              코드 자체가 경합 상황(race condition. 경합 상황. 공유 자원에 대해 여러 개의 프로세스가 동시에 접근을 시도하는 상태)에 직면한다. READ가 아닌 UPDATE에서는 데이터 분실이 생길 수 있다.
-              ```python
-              from django.db.models import F
-              from models.customers import Customer
+      # Don't do this!
+      from models.customers import Customer
 
-              customers = Customer.objects.filter(scoops_ordered__gt=F('store_visits'))
-              # 위 코드는 디비 자체 내에서 해당 조건을 비교하는 기능을 가지고 있다.
-              # 내부적으로 장고는 아래와 같은 코드를 실행한다.
-              # SELECT * from customers_customer where scoops_ordered > store_visits
-              ```
-              2. 데이터베이스 함수들
-               UPPER(), LOWER(), CONCAT() 등 일반적인 데이터베이스 함수를 사용 가능하다.
-               이용이 쉽고 간결하며, 비즈니스 로직을 디비로 더 많이 이전할 수 있게 되었다.
-               (데이터 처리는 파이썬보다 디비가 빠르다)
-               데이터베이스 함수는 쿼리표현식이기도 하다.
+      customers = []
+      for customer in Customer.objects.iterator(): # 루프를 돌며 고객 레코드 하나하나에 접근한다.
+          if customer.scoops_ordered > customer.store_visits:
+              customers.append(customer)
+      ```
+
+      데이터베이스 안의 모든 고객 레코드에 대해 하나하나 파이썬을 이용한 루프가 돌고 있다. 느리며 메모리를 많이 소모한다.  
+       코드 자체가 경합 상황(race condition. 경합 상황. 공유 자원에 대해 여러 개의 프로세스가 동시에 접근을 시도하는 상태)에 직면한다. READ가 아닌 UPDATE에서는 데이터 분실이 생길 수 있다.
+
+      ```python
+      from django.db.models import F
+      from models.customers import Customer
+
+      customers = Customer.objects.filter(scoops_ordered__gt=F('store_visits'))
+      # 위 코드는 디비 자체 내에서 해당 조건을 비교하는 기능을 가지고 있다.
+      # 내부적으로 장고는 아래와 같은 코드를 실행한다.
+      # SELECT * from customers_customer where scoops_ordered > store_visits
+      ```
+
+  2.  데이터베이스 함수들  
+      UPPER(), LOWER(), CONCAT() 등 일반적인 데이터베이스 함수를 사용 가능하다.
+      이용이 쉽고 간결하며, 비즈니스 로직을 디비로 더 많이 이전할 수 있게 되었다.
+      (데이터 처리는 파이썬보다 디비가 빠르다)
+      데이터베이스 함수는 쿼리표현식이기도 하다.
 
 - 로우 SQL은 지양  
-  단, 아래 상황은 쓰는 게 좋다.  
-   1) 로우 SQL을 이용함으로써 파이썬 코드나 ORM의 코드가 월등히 간결해지고 단축될 때  
-   2) 큰 데이터 셋에 적용되는 여러 QuerySet작업을 연결할 경우
+  단, 아래 상황은 쓰는 게 좋다.
+  1.  로우 SQL을 이용함으로써 파이썬 코드나 ORM의 코드가 월등히 간결해지고 단축될 때
+  2.  큰 데이터 셋에 적용되는 여러 QuerySet작업을 연결할 경우
 - 트랜잭션  
   장고는 기본적으로 ORM이 모든 쿼리를 호출할 때마다 커밋을 한다.
   이로인해 데이터베이스 충돌이 발생할 수 있으며 이를 해결하기 위해 트랜잭션을 이용한다.  
   트랜잭션이란 둘 또는 그 이상의 업데이트를 단일화된 작업으로 처리하는 기법이다. (하나의 수정작업이 실패하면 트랜잭션의 모든 업데이트가 실패 이전 상태로 복구된다)
   이를 위해선 디비가 원자성(Atomic), 일관성(Consistent), 독립성(Isolated), 지속성(Durable)을 가져야 한다.  
   이런 특성을 ACID라고도 부른다. 1) 각각의 HTTP요청을 트랜잭션으로 처리하기
-  `python # settings/base.py DATABASES = { 'default': { # ... 'ATOMIC_REQUESTS': True, }, } `
+
+  ```python
+  # settings/base.py
+  DATABASES = { 'default': { # ... 'ATOMIC_REQUESTS': True, }, }
+  ```
+
   ATOMIC_REQUESTS 설정을 통해 모든 웹 요청을 트랜잭션으로 쉽게 처리할 수 있다.  
    이 설정은 뷰에서의 모든 데이터베이스 쿼리가 보호되는 안정성을 얻을 수 있다. 그러나 성능 저하를 가져올 수 있다.  
    특정 뷰에서는 설정을 제외하고싶다면 transaction.non_atomic_requests()로 데코레이팅하는 선택을 고려해야 한다.  
    ATOMIC_REQUESTS 사용 시 또 다른 주의점으로는, 작업 처리 중 사용자에게 메일을 보냈고, 메일 발송 후에 에러가 발생하여 롤백되는 경우다.  
-   이렇게 디비가 아닌 아이템에 CRUD하는 뷰를 만들 때에는 해당 뷰를 transaction.non_atomic_requests()로 데코레이팅하는 걸 고려해 보아야 한다.  
-   - Simple Non-Atomic View
+   이렇게 디비가 아닌 아이템에 CRUD하는 뷰를 만들 때에는 해당 뷰를 transaction.non_atomic_requests()로 데코레이팅하는 걸 고려해 보아야 한다.
+
+  - Simple Non-Atomic View
+
   ```python # flavors/views.py
+  from django.db import transaction
+  from django.http import HttpResponse
+  from django.shortcuts import get_object_or_404
+  from django.utils import timezone
 
-      from django.db import transaction
-      from django.http import HttpResponse
-      from django.shortcuts import get_object_or_404
-      from django.utils import timezone
+  from .models import Flavor
 
-      from .models import Flavor
+  @transaction.non_atomic_requests
+  def posting_flavor_status(request, pk, status):
+      flavor = get_object_or_404(Flavor, pk=pk)
+      # 여기서 오토커밋 모드가 실행될 것이다. (장고 기본 설정)
+      flavor.latest_status_change_attempt = timezone.now()
+      flavor.save()
 
-      @transaction.non_atomic_requests
-      def posting_flavor_status(request, pk, status):
-          flavor = get_object_or_404(Flavor, pk=pk)
+      with transaction.atomic():
+      # 이 코드는 트랜잭션 안에서 실행된다.
+      flavor.status = status
+      flavor.latest_status_change_success = timezone.now()
+      flavor.save()
 
-          # 여기서 오토커밋 모드가 실행될 것이다. (장고 기본 설정)
-          flavor.latest_status_change_attempt = timezone.now()
-          flavor.save()
-
-          with transaction.atomic():
-              # 이 코드는 트랜잭션 안에서 실행된다.
-              flavor.status = status
-              flavor.latest_status_change_success = timezone.now()
-              flavor.save()
-
-          return HttpResponse('Hooray')
-          # If the transaction fails, return the appropriate status
-          return HttpResponse('Sadness', status_code=400)
+      return HttpResponse('Hooray')
+      # If the transaction fails, return the appropriate status
+      return HttpResponse('Sadness', status_code=400)
+  ```
 
 - 명시적 트랜잭션 선언  
   사이트 성능을 개선하는 방법 중 하나이다.  
@@ -308,4 +319,246 @@ def fun_function(name=None):
   뷰가 django.http.StreamingHttpResponse를 반환한다면 일단 응답이 시작된 이상 트랜잭션 에러를 중간에 처리하기란 불가능하다.  
   StreamingHttpResponse에서 트랜잭션 에러를 처리하려면? 다음 중 하나를 고려하자 1) ATOMIC_REQUESTS=False로 설정, 7.7.2의 기술을 고려 2) 뷰를 django.db.transaction.non_atomic_requests 데코레이터로 감싸본다.
 
-트랜잭션은 뷰에서만 적용된다. 스트림 응답이 SQL쿼리를 생성했다면? 오토커밋으로 동작한다
+트랜잭션은 뷰에서만 적용된다. 스트림 응답이 SQL쿼리를 생성했다면? 오토커밋으로 동작한다.
+
+### 8장 함수 기반 뷰와 클래스 기반 뷰
+
+- 함수 뷰와 클래스 뷰 중 어느 것을 선택해야 하는가?
+  ![ex_screenshot](./static/md/08.png)
+- 클래스뷰의 나쁜 예시
+
+```python
+from django.urls import path
+from django.views.generic import DetailView
+
+from tastings.models import Tasting
+
+urlpatterns = [
+    path('<int:pk>',
+        DetailView.as_view(
+            model=Tasting,
+            template_name='tastings/detail.html'),
+        name='detail'),
+    path('<int:pk>/results/',
+        DetailView.as_view(
+            model=Tasting,
+            template_name='tastings/results.html'),
+        name='results'),
+]
+```
+
+이 코드는 장고의 디자인 철학에 어긋난다.
+
+1. 뷰와 url, 모델 사이에 느슨한 결합(loose coupling)대신 단단하게 종속적인 결합(tight coupling)이 되어 있다. 즉, 뷰에서 정의된 내용이 재사용이 어렵다.
+2. 클래스 기반 뷰들 사이에서 같거나 비슷한 인자들이 계속 이용된다. DRY(Don't Repeat Yourself)철학에 위배된다.
+3. URL들의 무한한 확장성이 파괴되었다. 이 안티패턴을 사용함으로써 클래스 상속이 불가능해졌다.
+
+- URLConf에서 느슨한 결합 유지하기
+
+```python
+# testings/views.py
+from django.urls import reverse
+from django.views.generic import ListView, DetailView, UpdateView
+
+from .models import Tasting
+
+class TasteListView(ListView):
+    model = Tasting
+
+class TasteDetailView(DetailView):
+    model = Tasting
+
+class TasteResultsView(TasteDetailView):
+    template_name = 'tastings/results.html'
+
+class TasteUpdateView(UpdateView):
+    model = Tasting
+
+    def get_success_url(self):
+        return reverse('tastings:detail', kwargs={'pk': self.object.pk})
+```
+
+```python
+# testings/urls.py
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path(
+        route='',
+        view=views.TasteListView.as_view(),
+        name='list'
+    ),
+    path(
+        route='<int:pk>/',
+        view=views.TasteDetailView.as_view(),
+        name='detail'
+    ),
+    path(
+        route='<int:pk>/results/',
+        view=views.TasteResultsView.as_view(),
+        name='results'
+    ),
+    path(
+        route='<int:pk>/update/',
+        view=views.TasteUpdateView.as_view(),
+        name='update'
+    )
+]
+```
+
+위 방법은 아래와 같은 이유로 더 낫다
+
+1. 반복되는 작업 하지 않기: 뷰들 사이에서 인자나 속성이 중복 사용되지 않는다
+2. 느슨한 결합: URLConf로부터 모델과 템플릿이름을 제거함으로서 뷰는 뷰이고 URLConf는 URLConf이게 되었다. 하나 이상의 URLConf에서 정의된 뷰의 호출이 가능해졌다.
+3. 한번에 한 가지씩 업무를 명확하고 매끄럽게 처리: 뷰의 로직을 찾기 위해 뷰나 URLConf를 둘 다 뒤지지 않아도 된다.
+4. 클래스 기반의 장점을 살린다: 뷰 모듈에서 표준화된 정의를 가지게 됨으로써 다른 클래스에서도 우리의 뷰를 상속해서 사용할 수 있다.
+5. 무한한 유연성: 뷰 모듈에서 표준화된 정의를 구현함으로 커스텀 로직을 구현 가능하다.
+
+- URL 이름공간 이용하기  
+  path의 name은 위처럼 tastings_detail이나 tastings_result이 아니다.  
+  앱이나 모델 이름이 빠진 detail이나 results같은 명확한 이름을 갖는다
+  tastings같은 앱 이름을 입력할 필요가 없어졌다.
+
+```python
+urls.py
+urlpatterns += [
+    path('tastings/', include('tastings.urls', namespace='tastings')), # 8.3절의 tasting/urls.py로 연결됨
+]
+```
+
+```python
+# tastings/views.py snippet
+class TasteUpdateView(UpdateView):
+    model = Tasting
+
+    def get_success_url(self):
+        return reverse('tastings:detail', kwargs={'pk': self.object.pk})
+```
+
+```html
+{% extends 'base.html' %} {% block title %}Tastings{% endblock title %} {% block
+content %}
+<ul>
+  {% for taste in tastings %}
+  <li>
+    <a href="{% url 'tastings:detail' taste.pk %}">{{ taste.title }}</a>
+    <small> (<a href="{% url 'tastings:update' taste.pk %}">update</a>) </small>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock content %}
+```
+
+- 서드 파티 라이브러리와 상호 운영성 높이기  
+  URL이름을 <my_app>\_detail 등의 방법으로 부르면 <my_app> 부분이 겹쳐서 문제가 될 수 있다.  
+  이 때 URL 이름 공간을 통해 이를 해결할 수 있다.  
+  다음은 두개의 contact앱이 있을 때, namespace를 통해 해결해보는 코드다.
+
+```python
+# urls.py at root of project
+urlpatterns += [
+    path('contact/', include('contactmonger.urls', namespace='contactmonger')),
+    path('report-problem/', include('contactapp.urls', namespace='contactapp')),
+]
+```
+
+contact.html
+
+```html
+{% extends "base.html" %} {% block title %}Contact{% endblock title %} {% block
+content %}
+<p>
+  <a href="{% url 'contactmonger:create' %}">Contact Us</a>
+</p>
+<p>
+  <a href="{% url 'contactapp:report' %}">Report a Problem</a>
+</p>
+{% endblock content %}
+```
+
+namespace를 이용해서 이름을 지정하고 contact.html에서 지정한 이름으로 호출하고 있다.
+
+- 뷰에서 비즈니스 로직 분리하기
+
+1. 비즈니스 로직을 뷰에다 구현한다면? PDF를 생성하거나 REST API를 추가하거나 혹은 다른 포맷을 지원해야 하는 경우에 장애로 대두될 수 있다.
+2. 때문에 모델 메서드, 매니저 메서드 또는 일반적인 유틸리티 헬퍼 함수들을 이용하는 전략을 선호하게 되었다.
+3. 비즈니스 로직이 재사용 가능한 컴포넌트가 되고 이를 뷰에서 호출하면 확장성이 좋아진다.
+4. 처음에는 비즈니스 로직이 포함될 수 있다. 하지만 뷰에서 표준적으로 이용되는 구조 이외에 덧붙여진 비즈니스 로직이 보인다면 해당 코드를 이동시키자.
+
+- 장고의 뷰와 함수
+  장고의 뷰는 HTTP 요청 객체를 받아 HTTP를 응답라는 객체로 변경하는 함수다. 수학의 함수와 개념상 비슷하다.
+
+```python
+# 함수로서의 장고 함수 기반 뷰
+HttpResponse = view(HttpRequest)
+
+# 기본 수학식 형태로 풀이 (remember functions from algebra?)
+y = f(x)
+
+# ... 그리고 이를 CBV 예로 변경해 보면 다음과 같다
+HttpResponse = View.as_view()(HttpRequest)
+```
+
+- 뷰의 기본 형태들  
+  기본형태가 중요한 이유
+
+1. 한 기능만 따로 떼어놓은 관점이 필요할 떼가 있다
+2. 가장 단순한 장고 뷰를 이해했다는 것은 장고 뷰의 역할을 명확히 이해했다는 것이다
+3. 함수 기반 뷰는 HTTP method 중립이지만 Django CBV는 특정 HTTP method의 선언이 필요하다는 것을 알 수 있다. (get, post ..)
+
+```python
+from django.http import HttpResponse
+from django.views.generic import View
+
+# 함수 기반 뷰의 기본 형태 (FBV)
+def simplest_view(request):
+    # 비즈니스 로직이 여기에 위치한다.
+    return HttpResponse('FBV')
+
+# 클래스 기반 뷰의 기본 형태 (CBV)
+class SimplestView(View):
+    def get(self, request, *args, **kwargs):
+        # 비즈니스 로직이 여기에 위치한다.
+        return HttpResponse('CBV')
+```
+
+- locals()를 Views Context에 이용하지 말자  
+  locals()를 호출형으로 반환하는것은 안티패턴이다.  
+  시간을 단축할것같지만 더 긴 시간을 허비하는 결과를 초래한다.  
+  유지보수가 힘들다. 뷰가 어떤것을 반환하려고 하는지 명확하게 파악하기가 힘들다.
+
+```python
+# Don't do this!
+def ice_cream_store_display(request, store_id):
+    store = get_object_or_404(Store, id=store_id)
+    date = timezone.now()
+    return render(request, 'melted_ice_cream_report.html', locals())
+```
+
+```python
+# Don't do this!
+def ice_cream_store_display(request, store_id):
+    store = get_object_or_404(Store, id=store_id)
+    now = timezone.now()
+    return render(request, 'melted_ice_cream_report.html', locals())
+```
+
+다음과 같이 명시적인 context를 사용하라.
+
+```python
+def ice_cream_store_display(request, store_id):
+    return render(
+        request,
+        'melted_ice_cream_report.html',
+        {
+            'store': get_object_or_404(Store, id=store_id),
+            'now': timezone.now()
+        }
+    )
+```
+
+- 요약  
+  뷰 코드는 views.py모듈에, URLConf코드는 앱의 urls.py모듈에 소속되어야 한다.  
+  클래스 기반 뷰를 사용하면 객체 상속을 이용함으로써 코드를 재사용하기 쉬워지고 디자인을 유연하게 할 수 있다.
