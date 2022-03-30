@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "polls",
     "core",
     "flavor",
+    "rest_framework",
 ]
 
 MIDDLEWARE = [
