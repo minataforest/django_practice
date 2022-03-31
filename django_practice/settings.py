@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "core",
     "flavor",
     "rest_framework",
+    "drf_test",
 ]
 
 MIDDLEWARE = [
