@@ -14,3 +14,8 @@ def celery_test2(request):
     s1 = add.s(2, 4)
     result = s1.delay()
     return HttpResponse(result.get())
+
+
+def celery_test3(request):
+    result = add.s(2, 5).delay()
+    return HttpResponse(result.get())
